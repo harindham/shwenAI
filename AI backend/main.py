@@ -1,3 +1,4 @@
+import json
 import re
 from typing import Literal
 
@@ -50,6 +51,18 @@ class DatabaseConnection(BaseModel):
             raise ValueError("Schema is required.")
         return value
 
+
+class ChatMessage(BaseModel):
+    connection_name: str = Field(min_length=1, max_length=80)
+    message: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("connection_name", "message")
+    @classmethod
+    def strip_chat_fields(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field is required.")
+        return value
 
 @app.exception_handler(RequestValidationError)
 async def safe_validation_error(request: Request, exc: RequestValidationError):
@@ -210,6 +223,16 @@ def connect_database(details: DatabaseConnection):
     finally:
         if engine is not None:
             engine.dispose()
+
+
+@app.post("/api/chat/message")
+def receive_chat_message(chat_message: ChatMessage):
+    """Print a chat message to the API terminal; no AI response is generated yet."""
+    print(
+        f"[chat] {json.dumps({'connection_name': chat_message.connection_name, 'message': chat_message.message}, ensure_ascii=False)}",
+        flush=True,
+    )
+    return {"received": True}
 
 
 @app.get("/")
