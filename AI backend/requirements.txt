@@ -42,6 +42,9 @@ python-dotenv==1.2.4
 python-multipart==0.0.33
 PyYAML==6.0.3
 requests==2.34.2
+SQLAlchemy>=2.0,<3.0
+psycopg[binary]>=3.2,<4.0
+PyMySQL>=1.1,<2.0
 rich==15.0.0
 rich-toolkit==0.20.6
 rignore==0.8.1
