@@ -249,7 +249,7 @@ def receive_chat_message(chat_message: ChatMessage):
     """Generate SQL with Gemini, execute it, and return the query results."""
     try:
         prompt = prepare_gemini_prompt(chat_message.connection_name, chat_message.message)
-        query = "SELECT SUM(t1.quantity) FROM ecommerce.order_items AS t1 INNER JOIN ecommerce.products AS t2 ON t1.product_id = t2.id WHERE t2.name ILIKE '%mechanical keyboard%';"#generate_response(prompt)
+        query = generate_response(prompt) #"SELECT SUM(t1.quantity) FROM ecommerce.order_items AS t1 INNER JOIN ecommerce.products AS t2 ON t1.product_id = t2.id WHERE t2.name ILIKE '%mechanical keyboard%';"
         print((f"Gemini generated SQL:\n{query}\n"))
         return {"response": execute_query(chat_message.connection_name, query)}
     except MetadataNotFoundError as error:
