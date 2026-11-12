@@ -92,7 +92,7 @@ export function ChatView({ connectionName }: ChatViewProps) {
         <span className="chat-ready"><i /> Ready</span>
       </header>
 
-      <div className="chat-conversation" aria-label="Conversation">
+      <div className="chat-conversation" role="region" aria-label="Conversation" tabIndex={0}>
         <div className="chat-date-divider"><span>NEW CONVERSATION</span></div>
         <div className="chat-message-row">
           <div className="assistant-avatar"><BrandMark /></div>
