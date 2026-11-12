@@ -1,4 +1,3 @@
-import json
 import re
 from typing import Literal
 
@@ -11,6 +10,8 @@ from sqlalchemy import URL, create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.inspection import inspect
 from sqlalchemy.pool import NullPool
+from gemini_service import GeminiConfigurationError, GeminiServiceError, generate_response
+from metadata_store import store_schema_metadata
 
 app = FastAPI()
 
@@ -201,7 +202,7 @@ def connect_database(details: DatabaseConnection):
                 len(database_object["columns"])
                 for database_object in objects
             )
-            return {
+            metadata_result = {
                 "connected": True,
                 "provider": details.provider,
                 "database": details.database,
@@ -214,6 +215,18 @@ def connect_database(details: DatabaseConnection):
                 },
                 "schemas": schemas,
             }
+            try:
+                metadata_result["stored_metadata_items"] = store_schema_metadata(
+                    metadata_result,
+                    details.host,
+                    details.port,
+                )
+            except Exception:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Metadata was fetched but could not be saved to Qdrant. Check that Qdrant is running and configured.",
+                ) from None
+            return metadata_result
     except (SQLAlchemyError, ImportError):
         # Driver errors may include host, username, or other connection details.
         raise HTTPException(
@@ -227,12 +240,13 @@ def connect_database(details: DatabaseConnection):
 
 @app.post("/api/chat/message")
 def receive_chat_message(chat_message: ChatMessage):
-    """Print a chat message to the API terminal; no AI response is generated yet."""
-    print(
-        f"[chat] {json.dumps({'connection_name': chat_message.connection_name, 'message': chat_message.message}, ensure_ascii=False)}",
-        flush=True,
-    )
-    return {"received": True}
+    """Send a message to Gemini and return its response."""
+    try:
+        return {"response": generate_response(chat_message.message)}
+    except GeminiConfigurationError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from None
+    except GeminiServiceError:
+        raise HTTPException(status_code=502, detail="Could not get a response from Gemini.") from None
 
 
 @app.get("/")

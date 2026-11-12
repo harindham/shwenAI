@@ -17,3 +17,7 @@ ENV/
 .env
 .env.*
 !.env.example
+
+# Qdrant persistent database files
+/qdrant_data/*
+!/qdrant_data/.gitkeep

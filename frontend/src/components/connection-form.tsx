@@ -63,7 +63,7 @@ export function ConnectionForm({ onConnected, onConnectionStarted, onProviderCha
 
       const metadata = result as DatabaseMetadata;
       setConnectionState("connected");
-      setMessage("Connected. Database metadata has been fetched.");
+      setMessage(`Connected. Fetched metadata and stored ${metadata.stored_metadata_items} items in Qdrant.`);
       onConnected(metadata);
 
       const passwordInput = formElement.querySelector<HTMLInputElement>("#password");

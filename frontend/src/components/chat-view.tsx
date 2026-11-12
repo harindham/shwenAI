@@ -10,7 +10,7 @@ type ChatViewProps = {
 
 export function ChatView({ connectionName }: ChatViewProps) {
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<string[]>([]);
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string }[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
@@ -32,7 +32,11 @@ export function ChatView({ connectionName }: ChatViewProps) {
         throw new Error(typeof result.detail === "string" ? result.detail : "Could not send message.");
       }
 
-      setMessages((currentMessages) => [...currentMessages, message]);
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        { role: "user", text: message },
+        { role: "assistant", text: result.response },
+      ]);
       setDraft("");
     } catch (sendError) {
       setError(sendError instanceof TypeError
@@ -77,11 +81,11 @@ export function ChatView({ connectionName }: ChatViewProps) {
         </div>
 
         {messages.map((message, index) => (
-          <div className="chat-message-row user-message-row" key={`${index}-${message}`}>
-            <div className="user-avatar">S</div>
+          <div className={`chat-message-row${message.role === "user" ? " user-message-row" : ""}`} key={`${index}-${message.role}-${message.text}`}>
+            {message.role === "user" ? <div className="user-avatar">S</div> : <div className="assistant-avatar"><BrandMark /></div>}
             <div className="chat-message-content">
-              <div className="chat-message-author">You <span>just now</span></div>
-              <div className="chat-bubble user-bubble">{message}</div>
+              <div className="chat-message-author">{message.role === "user" ? "You" : "shwenAI"} <span>just now</span></div>
+              <div className={`chat-bubble ${message.role === "user" ? "user-bubble" : "assistant-bubble"}`}>{message.text}</div>
             </div>
           </div>
         ))}

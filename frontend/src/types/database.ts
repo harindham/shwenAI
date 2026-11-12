@@ -31,6 +31,7 @@ export type DatabaseMetadata = {
   schema: string;
   connection_name: string;
   summary: { schemas: number; tables_and_views: number; columns: number };
+  stored_metadata_items: number;
   schemas: { name: string; sequences: string[]; objects: DatabaseObject[] }[];
 };
 
