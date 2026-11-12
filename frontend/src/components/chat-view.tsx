@@ -8,9 +8,27 @@ type ChatViewProps = {
   connectionName: string;
 };
 
+type QueryResult = {
+  query: string;
+  columns: string[];
+  rows: unknown[][];
+  row_count: number;
+  truncated: boolean;
+};
+
+function isQueryResult(value: unknown): value is QueryResult {
+  if (typeof value !== "object" || value === null) return false;
+  const result = value as Record<string, unknown>;
+  return typeof result.query === "string"
+    && Array.isArray(result.columns) && result.columns.every((column) => typeof column === "string")
+    && Array.isArray(result.rows) && result.rows.every((row) => Array.isArray(row))
+    && typeof result.row_count === "number" && Number.isInteger(result.row_count) && result.row_count >= 0
+    && typeof result.truncated === "boolean";
+}
+
 export function ChatView({ connectionName }: ChatViewProps) {
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string }[]>([]);
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string; result?: QueryResult }[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
@@ -32,10 +50,17 @@ export function ChatView({ connectionName }: ChatViewProps) {
         throw new Error(typeof result.detail === "string" ? result.detail : "Could not send message.");
       }
 
+      const assistantResponse: unknown = result.response;
+      if (typeof assistantResponse !== "string" && !isQueryResult(assistantResponse)) {
+        throw new Error("The server returned an invalid query result. Please try again.");
+      }
+
       setMessages((currentMessages) => [
         ...currentMessages,
         { role: "user", text: message },
-        { role: "assistant", text: result.response },
+        typeof assistantResponse === "string"
+          ? { role: "assistant", text: assistantResponse }
+          : { role: "assistant", text: `${assistantResponse.row_count} rows returned`, result: assistantResponse },
       ]);
       setDraft("");
     } catch (sendError) {
@@ -85,7 +110,9 @@ export function ChatView({ connectionName }: ChatViewProps) {
             {message.role === "user" ? <div className="user-avatar">S</div> : <div className="assistant-avatar"><BrandMark /></div>}
             <div className="chat-message-content">
               <div className="chat-message-author">{message.role === "user" ? "You" : "shwenAI"} <span>just now</span></div>
-              <div className={`chat-bubble ${message.role === "user" ? "user-bubble" : "assistant-bubble"}`}>{message.text}</div>
+              <div className={`chat-bubble ${message.role === "user" ? "user-bubble" : "assistant-bubble"}`}>
+                <MessageContent text={message.text} result={message.result} />
+              </div>
             </div>
           </div>
         ))}
@@ -102,6 +129,34 @@ export function ChatView({ connectionName }: ChatViewProps) {
         onSubmit={handleSubmit}
       />
     </section>
+  );
+}
+
+function MessageContent({ text, result }: { text: unknown; result?: unknown }) {
+  if (isQueryResult(result)) return <QueryResultView result={result} />;
+  // Fast Refresh can preserve messages from when responses were stored in text.
+  if (isQueryResult(text)) return <QueryResultView result={text} />;
+  return <>{typeof text === "string" ? text : "This message could not be displayed. Please send it again."}</>;
+}
+
+function QueryResultView({ result }: { result: QueryResult }) {
+  return (
+    <div className="query-result">
+      <details><summary>SQL query</summary><pre>{result.query}</pre></details>
+      <p>{result.row_count} {result.row_count === 1 ? "row" : "rows"} returned{result.truncated ? " (showing the first 1,000 rows)" : ""}.</p>
+      {result.rows.length === 0 ? <p>No matching rows.</p> : (
+        <div className="query-result-scroll" role="region" aria-label="Query results" tabIndex={0}>
+          <table>
+            <thead><tr>{result.columns.map((column, index) => <th key={index} scope="col">{column}</th>)}</tr></thead>
+            <tbody>{result.rows.map((row, rowIndex) => (
+              <tr key={rowIndex}>{row.map((value, columnIndex) => (
+                <td key={columnIndex}>{value === null ? "NULL" : typeof value === "object" ? JSON.stringify(value) : String(value)}</td>
+              ))}</tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 

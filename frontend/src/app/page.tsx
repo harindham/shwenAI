@@ -32,7 +32,11 @@ export default function Home() {
             />
           </div>
           {activeView === "metadata" && metadata && <MetadataView metadata={metadata} />}
-          {activeView === "chat" && metadata && <ChatView connectionName={metadata.connection_name} />}
+          {metadata && (
+            <div hidden={activeView !== "chat"}>
+              <ChatView connectionName={metadata.connection_name} />
+            </div>
+          )}
           <PageFooter />
         </div>
       </section>

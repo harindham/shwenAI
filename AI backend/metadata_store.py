@@ -1,11 +1,39 @@
 import hashlib
 import os
+from threading import RLock
 from uuid import NAMESPACE_URL, uuid5
 
 from qdrant_client import QdrantClient, models
 
 COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "database_metadata")
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
+# Folder on disk where Qdrant data is persisted. Keep it outside any directory
+# your dev reloader watches, and add it to .gitignore.
+QDRANT_PATH = os.getenv("QDRANT_PATH", "./.qdrant_data")
+_clients: dict[str, QdrantClient] = {}
+_clients_lock = RLock()
+
+
+class MetadataNotFoundError(Exception):
+    """The connection has no metadata stored."""
+
+
+def _connection_dir(connection_name: str) -> str:
+    digest = hashlib.sha256(connection_name.encode("utf-8")).hexdigest()[:16]
+    return os.path.join(QDRANT_PATH, digest)
+
+
+def _get_client(connection_name: str, create: bool = False) -> QdrantClient | None:
+    """Return the cached client, or reopen it from disk. Caller must hold _clients_lock."""
+    client = _clients.get(connection_name)
+    if client is not None:
+        return client
+    path = _connection_dir(connection_name)
+    if not create and not os.path.isdir(path):
+        return None
+    client = QdrantClient(path=path)
+    _clients[connection_name] = client
+    return client
 
 
 def _object_text(connection_name: str, database: str, schema: str, item: dict) -> str:
@@ -46,6 +74,7 @@ def _records(metadata: dict, source_id: str) -> tuple[list[str], list[dict], lis
             "connection_name": metadata["connection_name"],
             "database": metadata["database"],
             "provider": metadata["provider"],
+            "dialect": metadata.get("dialect", metadata["provider"]),
             "schema": schema["name"],
             "metadata_type": "schema",
             "metadata": {"name": schema["name"], "sequences": schema["sequences"]},
@@ -60,6 +89,7 @@ def _records(metadata: dict, source_id: str) -> tuple[list[str], list[dict], lis
                 "connection_name": metadata["connection_name"],
                 "database": metadata["database"],
                 "provider": metadata["provider"],
+                "dialect": metadata.get("dialect", metadata["provider"]),
                 "schema": schema["name"],
                 "metadata_type": item["kind"],
                 "object_name": item["name"],
@@ -71,25 +101,27 @@ def _records(metadata: dict, source_id: str) -> tuple[list[str], list[dict], lis
 
 
 def store_schema_metadata(metadata: dict, host: str, port: int) -> int:
-    """Embed selected-schema metadata in an ephemeral in-memory Qdrant; return point count."""
+    """Replace a connection's persisted metadata after a successful upload."""
     source_key = "|".join((metadata["connection_name"], metadata["provider"], host, str(port), metadata["database"]))
     source_id = hashlib.sha256(source_key.encode("utf-8")).hexdigest()
     documents, payloads, point_ids = _records(metadata, source_id)
 
-    if not documents:
-        return 0
+    with _clients_lock:
+        client = _get_client(metadata["connection_name"], create=True)
 
-    client = QdrantClient(location=":memory:")
-    try:
-        if not client.collection_exists(COLLECTION_NAME):
-            client.create_collection(
-                collection_name=COLLECTION_NAME,
-                vectors_config=models.VectorParams(
-                    size=client.get_embedding_size(EMBEDDING_MODEL),
-                    distance=models.Distance.COSINE,
-                ),
-            )
+        # Replace, don't merge: drop whatever was stored before
+        if client.collection_exists(COLLECTION_NAME):
+            client.delete_collection(COLLECTION_NAME)
+        if not documents:
+            return 0
 
+        client.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=models.VectorParams(
+                size=client.get_embedding_size(EMBEDDING_MODEL),
+                distance=models.Distance.COSINE,
+            ),
+        )
         client.upload_collection(
             collection_name=COLLECTION_NAME,
             vectors=[models.Document(text=document, model=EMBEDDING_MODEL) for document in documents],
@@ -98,32 +130,30 @@ def store_schema_metadata(metadata: dict, host: str, port: int) -> int:
             wait=True,
         )
 
-        source_filter = models.Filter(
-            must=[models.FieldCondition(key="source_id", match=models.MatchValue(value=source_id))]
-        )
-        existing_ids = []
+    return len(point_ids)
+
+
+def fetch_schema_metadata(connection_name: str) -> list[dict]:
+    """Read all schema payloads from this connection's persisted Qdrant store"""
+    with _clients_lock:
+        client = _get_client(connection_name)
+        if client is None or not client.collection_exists(COLLECTION_NAME):
+            raise MetadataNotFoundError("Database metadata is unavailable. Connect the database again.")
+
+        payloads = []
         offset = None
         while True:
             points, offset = client.scroll(
                 collection_name=COLLECTION_NAME,
-                scroll_filter=source_filter,
                 limit=256,
                 offset=offset,
-                with_payload=False,
+                with_payload=True,
                 with_vectors=False,
             )
-            existing_ids.extend(point.id for point in points)
+            payloads.extend(point.payload for point in points if point.payload)
             if offset is None:
                 break
 
-        stale_ids = [point_id for point_id in existing_ids if point_id not in point_ids]
-        if stale_ids:
-            client.delete(
-                collection_name=COLLECTION_NAME,
-                points_selector=models.PointIdsList(points=stale_ids),
-                wait=True,
-            )
-    finally:
-        client.close()
-
-    return len(point_ids)
+    if not payloads:
+        raise MetadataNotFoundError("Database metadata is unavailable. Connect the database again.")
+    return sorted(payloads, key=lambda item: (item["schema"], item["metadata_type"], item.get("object_name", "")))

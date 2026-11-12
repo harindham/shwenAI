@@ -149,6 +149,13 @@ h1 { margin: 0; color: #253027; font-size: 28px; font-weight: 600; letter-spacin
 .chat-bubble p { margin: 0; }
 .chat-bubble p + p { margin-top: 7px; }
 .chat-bubble strong { color: #48584a; font-weight: 600; }
+.query-result details { margin-bottom: 8px; }
+.query-result summary { cursor: pointer; }
+.query-result pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.query-result-scroll { max-height: 360px; overflow: auto; margin-top: 8px; }
+.query-result table { border-collapse: collapse; width: 100%; text-align: left; }
+.query-result th, .query-result td { padding: 6px 10px; border: 1px solid #e9eee8; white-space: nowrap; }
+.query-result th { background: #f5f8f3; position: sticky; top: 0; }
 .user-bubble { color: #fff; background: #37815d; border-color: #37815d; border-radius: 10px 3px 10px 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .suggested-prompts { margin: 27px 0 0 38px; }
 .suggested-prompts > span { display: block; margin-bottom: 9px; color: #9aa49a; font-size: 8px; font-weight: 700; letter-spacing: .9px; }

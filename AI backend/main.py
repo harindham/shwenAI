@@ -1,4 +1,5 @@
 import re
+from contextlib import asynccontextmanager
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
@@ -10,8 +11,9 @@ from sqlalchemy import URL, create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.inspection import inspect
 from sqlalchemy.pool import NullPool
-from gemini_service import GeminiConfigurationError, GeminiServiceError, generate_response
-from metadata_store import store_schema_metadata
+from gemini_service import GeminiConfigurationError, GeminiServiceError, generate_response, prepare_gemini_prompt
+from metadata_store import MetadataNotFoundError, store_schema_metadata
+from sql_execution_service import SQLConnectionNotFoundError, SQLConnectionStorageError, SQLExecutionError, execute_query, register_connection
 
 app = FastAPI()
 
@@ -205,6 +207,7 @@ def connect_database(details: DatabaseConnection):
             metadata_result = {
                 "connected": True,
                 "provider": details.provider,
+                "dialect": engine.dialect.name,
                 "database": details.database,
                 "schema": selected_schema,
                 "connection_name": details.connection_name,
@@ -226,7 +229,10 @@ def connect_database(details: DatabaseConnection):
                     status_code=503,
                     detail="Metadata was fetched but could not be saved to Qdrant. Check that Qdrant is running and configured.",
                 ) from None
+            register_connection(details.connection_name, url, connect_args, selected_schema)
             return metadata_result
+    except SQLConnectionStorageError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from None
     except (SQLAlchemyError, ImportError):
         # Driver errors may include host, username, or other connection details.
         raise HTTPException(
@@ -240,9 +246,20 @@ def connect_database(details: DatabaseConnection):
 
 @app.post("/api/chat/message")
 def receive_chat_message(chat_message: ChatMessage):
-    """Send a message to Gemini and return its response."""
+    """Generate SQL with Gemini, execute it, and return the query results."""
     try:
-        return {"response": generate_response(chat_message.message)}
+        prompt = prepare_gemini_prompt(chat_message.connection_name, chat_message.message)
+        query = "SELECT SUM(t1.quantity) FROM ecommerce.order_items AS t1 INNER JOIN ecommerce.products AS t2 ON t1.product_id = t2.id WHERE t2.name ILIKE '%mechanical keyboard%';"#generate_response(prompt)
+        print((f"Gemini generated SQL:\n{query}\n"))
+        return {"response": execute_query(chat_message.connection_name, query)}
+    except MetadataNotFoundError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
+    except SQLConnectionNotFoundError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
+    except SQLConnectionStorageError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from None
+    except SQLExecutionError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
     except GeminiConfigurationError as error:
         raise HTTPException(status_code=503, detail=str(error)) from None
     except GeminiServiceError:
