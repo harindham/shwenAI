@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import sys
 from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
@@ -44,6 +45,24 @@ class SQLConnectionStorageError(Exception):
 def _connection_file(connection_name: str) -> Path:
     digest = hashlib.sha256(connection_name.encode("utf-8")).hexdigest()
     return SQL_CONNECTIONS_PATH / f"{digest}.json"
+
+
+def list_saved_connections() -> list[str]:
+    """Return connection names from saved settings without exposing credentials."""
+    names = []
+    try:
+        files = SQL_CONNECTIONS_PATH.glob("*.json")
+        for file_path in files:
+            try:
+                data = json.loads(file_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            name = data.get("connection_name") if isinstance(data, dict) else None
+            if isinstance(name, str) and name.strip() and _connection_file(name) == file_path:
+                names.append(name)
+    except OSError as error:
+        raise SQLConnectionStorageError("Could not read saved database connections.") from error
+    return sorted(set(names), key=str.casefold)
 
 
 def register_connection(connection_name: str, url: URL, connect_args: dict, schema: str) -> None:
@@ -177,5 +196,5 @@ def execute_query(connection_name: str, query: str) -> dict:
         if engine is not None:
             engine.dispose()
 
-    print(f"[sql-result] {json.dumps(output, ensure_ascii=False)}", flush=True)
+    print(f"[sql-result] {json.dumps(output, ensure_ascii=False)}", file=sys.stderr, flush=True)
     return output

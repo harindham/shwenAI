@@ -1,15 +1,22 @@
 import hashlib
 import os
+from pathlib import Path
 from threading import RLock
 from uuid import NAMESPACE_URL, uuid5
 
 from qdrant_client import QdrantClient, models
+from dotenv import load_dotenv
+
+_BACKEND_DIRECTORY = Path(__file__).resolve().parent
+load_dotenv(_BACKEND_DIRECTORY / ".env")
 
 COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "database_metadata")
 EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 # Folder on disk where Qdrant data is persisted. Keep it outside any directory
 # your dev reloader watches, and add it to .gitignore.
 QDRANT_PATH = os.getenv("QDRANT_PATH", "./.qdrant_data")
+if not os.path.isabs(QDRANT_PATH):
+    QDRANT_PATH = str(_BACKEND_DIRECTORY / QDRANT_PATH)
 _clients: dict[str, QdrantClient] = {}
 _clients_lock = RLock()
 

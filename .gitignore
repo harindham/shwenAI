@@ -20,7 +20,7 @@ ENV/
 
 # Qdrant persistent database files
 /qdrant_data/*
-AI backend/.qdrant_data
+AI_backend/.qdrant_data
 !/qdrant_data/.gitkeep
 
 # Local SQL connection credentials
